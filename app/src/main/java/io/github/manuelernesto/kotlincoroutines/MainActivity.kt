@@ -4,17 +4,16 @@ import android.os.Bundle
 import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import kotlinx.android.synthetic.main.activity_main.*
-import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.*
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.Dispatchers.Main
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 class MainActivity : AppCompatActivity() {
 
+    private val JOB_TIMEOUT = 2100L
     private val RESULT_1 = "Result #1"
     private val RESULT_2 = "Result #2"
+
     private val TAG = "TAG"
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -23,9 +22,31 @@ class MainActivity : AppCompatActivity() {
 
         btn_action.setOnClickListener {
             //IO, Main, Default
+            setNewText("Click!")
             CoroutineScope(IO).launch {
                 fakeAPIRequest()
             }
+        }
+    }
+
+    private suspend fun fakeAPIRequest() {
+        withContext(IO) {
+            val job = withTimeoutOrNull(JOB_TIMEOUT) {
+                val result1 = getResult1FromApi()
+                settextOnMainThred(result1)
+                Log.d(TAG, result1)
+
+                val result2 = getResult2FromApi()
+                settextOnMainThred(result2)
+                Log.d(TAG, result2)
+            }
+
+            if (job == null) {
+                val cancelMessage = "Cancelling job... job took longer than $JOB_TIMEOUT ms"
+                Log.d(TAG, cancelMessage)
+                settextOnMainThred(cancelMessage)
+            }
+
         }
     }
 
@@ -38,16 +59,6 @@ class MainActivity : AppCompatActivity() {
         withContext(Main) {
             setNewText(input)
         }
-    }
-
-    private suspend fun fakeAPIRequest() {
-        val resul1 = getResult1FromApi()
-        Log.d(TAG, resul1)
-        settextOnMainThred(resul1)
-
-        val resul2 = getResult2FromApi()
-        Log.d(TAG, resul2)
-        settextOnMainThred(resul2)
     }
 
     private suspend fun getResult1FromApi(): String {
