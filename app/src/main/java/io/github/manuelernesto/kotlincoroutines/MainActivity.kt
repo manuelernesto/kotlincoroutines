@@ -2,6 +2,8 @@ package io.github.manuelernesto.kotlincoroutines
 
 import android.os.Bundle
 import android.util.Log
+import android.widget.ProgressBar
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import kotlinx.android.synthetic.main.activity_main.*
 import kotlinx.coroutines.*
@@ -10,70 +12,74 @@ import kotlinx.coroutines.Dispatchers.Main
 
 class MainActivity : AppCompatActivity() {
 
-    private val JOB_TIMEOUT = 2100L
-    private val RESULT_1 = "Result #1"
-    private val RESULT_2 = "Result #2"
-
+    private val PROGRESS_MAX = 100
+    private val PROGRESS_START = 0
+    private val JOB_TIME = 4000 //ms
     private val TAG = "TAG"
+    private lateinit var job: CompletableJob
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
         btn_action.setOnClickListener {
-            //IO, Main, Default
-            setNewText("Click!")
-            CoroutineScope(IO).launch {
-                fakeAPIRequest()
+            if (!::job.isInitialized)
+                initJob()
+            progressBar.startJobOrCancel(job)
+        }
+    }
+
+    private fun ProgressBar.startJobOrCancel(job: Job) {
+        if (this.progress > 0) {
+            Log.d(TAG, "$job is already active. Cancelling...")
+            resetJob()
+        } else {
+            btn_action.text = "Cancel Job #1"
+            CoroutineScope(IO + job).launch {
+                Log.d(TAG, "coroutine $this is activated with this job $job")
+                for (i in PROGRESS_START..PROGRESS_MAX) {
+                    delay((JOB_TIME / PROGRESS_MAX).toLong())
+                    this@startJobOrCancel.progress = i
+                }
+                updateJobCompeteTextVoew("Job is completed")
             }
         }
     }
 
-    private suspend fun fakeAPIRequest() {
-        withContext(IO) {
-            val job = withTimeoutOrNull(JOB_TIMEOUT) {
-                val result1 = getResult1FromApi()
-                settextOnMainThred(result1)
-                Log.d(TAG, result1)
-
-                val result2 = getResult2FromApi()
-                settextOnMainThred(result2)
-                Log.d(TAG, result2)
-            }
-
-            if (job == null) {
-                val cancelMessage = "Cancelling job... job took longer than $JOB_TIMEOUT ms"
-                Log.d(TAG, cancelMessage)
-                settextOnMainThred(cancelMessage)
-            }
-
+    private fun updateJobCompeteTextVoew(text: String) {
+        GlobalScope.launch(Main) {
+            txt_view.text = text
         }
     }
 
-    private fun setNewText(input: String) {
-        val newText = txt_view.text.toString() + "\n$input"
-        txt_view.text = newText
+    private fun resetJob() {
+        if (job.isActive || job.isCancelled)
+            job.cancel(CancellationException("Reseting job"))
+
+        initJob()
     }
 
-    private suspend fun settextOnMainThred(input: String) {
-        withContext(Main) {
-            setNewText(input)
+    private fun initJob() {
+        btn_action.text = "Start Job #1"
+        updateJobCompeteTextVoew("")
+        job = Job()
+        job.invokeOnCompletion {
+            it?.message.let { message ->
+                var msg = message
+                if (msg.isNullOrEmpty())
+                    msg = "Unknow cancellation error."
+                Log.d(TAG, "$job was canvelled. Reason: $msg")
+                showToast(msg)
+            }
+            progressBar.max = PROGRESS_MAX
+            progressBar.progress = PROGRESS_START
         }
     }
 
-    private suspend fun getResult1FromApi(): String {
-        logThread("getResult1FromApi")
-        delay(1000)
-        return RESULT_1
-    }
-
-    private suspend fun getResult2FromApi(): String {
-        logThread("getResult2FromApi")
-        delay(1000)
-        return RESULT_2
-    }
-
-    private fun logThread(methodName: String) {
-        Log.d(TAG, "$methodName : ${Thread.currentThread().name}")
+    private fun showToast(text: String) {
+        GlobalScope.launch(Main) {
+            Toast.makeText(this@MainActivity, text, Toast.LENGTH_SHORT).show()
+        }
     }
 }
